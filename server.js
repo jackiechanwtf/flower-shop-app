@@ -137,6 +137,78 @@ app.get('/api/flowers', async (req, res) => {
     }
 });
 
+// Получить информацию о доступности цветов для заказа
+app.get('/api/flowers/availability', async (req, res) => {
+    try {
+        const { orderDate, excludeOrderId } = req.query; // Дата заказа и ID заказа для исключения
+        
+        // Получаем все цветы
+        const flowersResult = await pool.query('SELECT * FROM flowers ORDER BY name');
+        const flowers = flowersResult.rows;
+        
+        // Для каждого цветка считаем, сколько заказано на указанную дату
+        const availability = await Promise.all(flowers.map(async (flower) => {
+            let reserved = 0;
+            
+            if (orderDate) {
+                // Нормализуем дату: берем только часть до пробела или T (YYYY-MM-DD)
+                let normalizedDate = orderDate;
+                if (typeof orderDate === 'string') {
+                    normalizedDate = orderDate.split('T')[0].split(' ')[0];
+                } else if (orderDate instanceof Date) {
+                    normalizedDate = orderDate.toISOString().split('T')[0];
+                }
+                
+                // Считаем заказы на эту дату, исключая указанный заказ (если передан)
+                let query = `
+                    SELECT SUM(oi.quantity) as total
+                    FROM order_items oi
+                    JOIN orders o ON o.id = oi.order_id
+                    WHERE o.order_date = $1::DATE AND oi.flower_id = $2
+                `;
+                const params = [normalizedDate, flower.id];
+                
+                if (excludeOrderId) {
+                    query += ' AND o.id != $3';
+                    params.push(excludeOrderId);
+                }
+                
+                const reservedResult = await pool.query(query, params);
+                reserved = parseInt(reservedResult.rows[0]?.total || 0);
+                
+                // Логирование для отладки
+                if (flower.name === 'Герберы' || flower.name.toLowerCase().includes('гербер')) {
+                    console.log(`[availability] ${flower.name}: на складе=${flower.quantity}, зарезервировано=${reserved}, доступно=${flower.quantity - reserved}, excludeOrderId=${excludeOrderId || 'нет'}, orderDate=${normalizedDate} (нормализовано из ${orderDate})`);
+                    
+                    // Дополнительная проверка: какие заказы есть на эту дату
+                    const debugQuery = `
+                        SELECT o.id, o.order_date, oi.flower_id, oi.quantity
+                        FROM orders o
+                        LEFT JOIN order_items oi ON o.id = oi.order_id
+                        WHERE o.order_date = $1::DATE
+                        ORDER BY o.id
+                    `;
+                    const debugResult = await pool.query(debugQuery, [normalizedDate]);
+                    console.log(`[availability] Заказы на дату ${normalizedDate}:`, debugResult.rows);
+                }
+            }
+            
+            return {
+                id: flower.id,
+                name: flower.name,
+                quantity: flower.quantity, // Исходное количество на складе
+                available: flower.quantity - reserved, // Доступно с учетом заказов
+                reserved: reserved // Зарезервировано в заказах
+            };
+        }));
+        
+        res.json(availability);
+    } catch (error) {
+        console.error('Ошибка получения доступности цветов:', error);
+        res.status(500).json({ error: 'Ошибка получения доступности цветов' });
+    }
+});
+
 //   API для заказов    
 
 // Получить все заказы
@@ -163,11 +235,28 @@ app.get('/api/orders', async (req, res) => {
             [currentDate]
         );
         
-        // Преобразуем items из строки в массив, если необходимо
-        const orders = result.rows.map(order => ({
-            ...order,
-            items: typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || [])
-        }));
+        console.log(`[GET /api/orders] Загружено заказов: ${result.rows.length}`);
+        
+        const orders = result.rows.map(order => {
+            let orderDate = order.order_date;
+            
+            // Нормализуем дату: если это объект Date или строка с временем, берем только дату
+            if (orderDate instanceof Date) {
+                // Используем локальные компоненты даты вместо toISOString() чтобы избежать проблем с timezone
+                const year = orderDate.getFullYear();
+                const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+                const day = String(orderDate.getDate()).padStart(2, '0');
+                orderDate = `${year}-${month}-${day}`;
+            } else if (typeof orderDate === 'string') {
+                orderDate = orderDate.split('T')[0].split(' ')[0];
+            }
+            
+            return {
+                ...order,
+                order_date: orderDate,
+                items: typeof order.items === 'string' ? JSON.parse(order.items) : (order.items || [])
+            };
+        });
         
         res.json(orders);
     } catch (error) {
@@ -194,8 +283,21 @@ app.get('/api/orders/:id', async (req, res) => {
             [id]
         );
 
+        // Нормализуем дату заказа
+        let orderDate = orderResult.rows[0].order_date;
+        if (orderDate instanceof Date) {
+            // Используем локальные компоненты даты вместо toISOString() чтобы избежать проблем с timezone
+            const year = orderDate.getFullYear();
+            const month = String(orderDate.getMonth() + 1).padStart(2, '0');
+            const day = String(orderDate.getDate()).padStart(2, '0');
+            orderDate = `${year}-${month}-${day}`;
+        } else if (typeof orderDate === 'string') {
+            orderDate = orderDate.split('T')[0].split(' ')[0];
+        }
+
         res.json({
             ...orderResult.rows[0],
+            order_date: orderDate,
             items: itemsResult.rows
         });
     } catch (error) {
@@ -214,17 +316,33 @@ app.post('/api/orders', async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать ФИО заказчика и дату заказа' });
         }
 
-        if (orderDate < currentDate) {
+        // Нормализуем дату: берем только часть YYYY-MM-DD
+        let normalizedOrderDate = orderDate;
+        if (typeof orderDate === 'string') {
+            normalizedOrderDate = orderDate.split('T')[0].split(' ')[0];
+        } else if (orderDate instanceof Date) {
+            normalizedOrderDate = orderDate.toISOString().split('T')[0];
+        }
+
+        console.log(`[POST /api/orders] Создан заказ: ${customerName} на ${normalizedOrderDate}`);
+
+        if (!customerName || !orderDate) {
+            return res.status(400).json({ error: 'Необходимо указать ФИО заказчика и дату заказа' });
+        }
+
+        if (normalizedOrderDate < currentDate) {
             return res.status(400).json({ error: 'Дата заказа не может быть меньше текущей даты' });
         }
 
         const orderId = uuidv4();
         await pool.query(
-            'INSERT INTO orders (id, customer_name, order_date) VALUES ($1, $2, $3)',
-            [orderId, customerName, orderDate]
+            'INSERT INTO orders (id, customer_name, order_date) VALUES ($1, $2, $3::DATE)',
+            [orderId, customerName, normalizedOrderDate]
         );
 
-        res.status(201).json({ id: orderId, customerName, orderDate, items: [] });
+        console.log(`[POST /api/orders] Заказ создан с датой: "${normalizedOrderDate}"`);
+
+        res.status(201).json({ id: orderId, customerName, orderDate: normalizedOrderDate, items: [] });
     } catch (error) {
         console.error('Ошибка создания заказа:', error);
         res.status(500).json({ error: 'Ошибка создания заказа' });
@@ -242,20 +360,28 @@ app.put('/api/orders/:id', async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать ФИО заказчика и дату заказа' });
         }
 
-        if (orderDate < currentDate) {
+        // Нормализуем дату: берем только часть YYYY-MM-DD
+        let normalizedOrderDate = orderDate;
+        if (typeof orderDate === 'string') {
+            normalizedOrderDate = orderDate.split('T')[0].split(' ')[0];
+        } else if (orderDate instanceof Date) {
+            normalizedOrderDate = orderDate.toISOString().split('T')[0];
+        }
+
+        if (normalizedOrderDate < currentDate) {
             return res.status(400).json({ error: 'Дата заказа не может быть меньше текущей даты' });
         }
 
         const result = await pool.query(
-            'UPDATE orders SET customer_name = $1, order_date = $2 WHERE id = $3',
-            [customerName, orderDate, id]
+            'UPDATE orders SET customer_name = $1, order_date = $2::DATE WHERE id = $3',
+            [customerName, normalizedOrderDate, id]
         );
 
         if (result.rowCount === 0) {
             return res.status(404).json({ error: 'Заказ не найден' });
         }
 
-        res.json({ id, customerName, orderDate });
+        res.json({ id, customerName, orderDate: normalizedOrderDate });
     } catch (error) {
         console.error('Ошибка обновления заказа:', error);
         res.status(500).json({ error: 'Ошибка обновления заказа' });
@@ -304,18 +430,41 @@ app.post('/api/orders/:orderId/items', async (req, res) => {
         }
 
         const availableQuantity = flowerResult.rows[0].quantity;
+        const orderDate = orderCheck.rows[0].order_date;
+
+        // Проверка: запрещаем добавлять один и тот же цветок дважды в один заказ
+        const existingFlowerInOrder = await pool.query(
+            'SELECT id FROM order_items WHERE order_id = $1 AND flower_id = $2',
+            [orderId, flowerId]
+        );
+        if (existingFlowerInOrder.rows.length > 0) {
+            return res.status(400).json({ 
+                error: 'Этот цветок уже добавлен в заказ. Пожалуйста, отредактируйте существующую позицию или выберите другой цветок.' 
+            });
+        }
 
         // Подсчет уже заказанных цветов этого вида в этом заказе
         const existingItems = await pool.query(
             'SELECT SUM(quantity) as total FROM order_items WHERE order_id = $1 AND flower_id = $2',
             [orderId, flowerId]
         );
-        const alreadyOrdered = parseInt(existingItems.rows[0]?.total || 0);
+        const alreadyOrderedInThisOrder = parseInt(existingItems.rows[0]?.total || 0);
 
-        // Проверка доступности
-        if (availableQuantity < alreadyOrdered + quantity) {
+        // Подсчет всех заказов этого цветка на дату заказа (включая текущий заказ)
+        const allOrdersOnDate = await pool.query(
+            `SELECT SUM(oi.quantity) as total
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             WHERE o.order_date = $1 AND oi.flower_id = $2`,
+            [orderDate, flowerId]
+        );
+        const totalOrderedOnDate = parseInt(allOrdersOnDate.rows[0]?.total || 0);
+
+        // Проверка доступности: остаток на складе должен быть >= всех заказов на эту дату
+        const available = availableQuantity - totalOrderedOnDate + alreadyOrderedInThisOrder;
+        if (available < quantity) {
             return res.status(400).json({ 
-                error: `Недостаточно цветов. Доступно: ${availableQuantity - alreadyOrdered}, требуется: ${quantity}` 
+                error: `Недостаточно цветов. На складе: ${availableQuantity}, зарезервировано: ${totalOrderedOnDate - alreadyOrderedInThisOrder}, доступно: ${available}, требуется: ${quantity}` 
             });
         }
 
@@ -370,24 +519,31 @@ app.put('/api/orders/:orderId/items/:itemId', async (req, res) => {
         }
 
         const availableQuantity = flowerResult.rows[0].quantity;
+        const orderDate = orderCheck.rows[0].order_date;
 
         // Подсчет уже заказанных цветов этого вида в этом заказе (исключая текущую позицию)
         const existingItems = await pool.query(
             'SELECT SUM(quantity) as total FROM order_items WHERE order_id = $1 AND flower_id = $2 AND id != $3',
             [orderId, flowerId, itemId]
         );
-        const alreadyOrdered = parseInt(existingItems.rows[0]?.total || 0);
+        const alreadyOrderedInThisOrder = parseInt(existingItems.rows[0]?.total || 0);
 
-        // Проверка доступности
-        // Если цветок не изменился, oldQuantity уже не учитывается в alreadyOrdered, 
-        // поэтому нужно проверить: availableQuantity >= alreadyOrdered + quantity
-        // Если цветок изменился, нужно проверить: availableQuantity >= alreadyOrdered + quantity
-        const requiredQuantity = quantity;
-        const availableForOrder = availableQuantity - alreadyOrdered;
-        
-        if (availableForOrder < requiredQuantity) {
+        // Подсчет всех заказов этого цветка на дату заказа (ИСКЛЮЧАЯ текущий заказ)
+        // Это позволяет редактировать количество в текущем заказе без учета его резерва
+        const allOrdersOnDate = await pool.query(
+            `SELECT SUM(oi.quantity) as total
+             FROM order_items oi
+             JOIN orders o ON o.id = oi.order_id
+             WHERE o.order_date = $1 AND oi.flower_id = $2 AND o.id != $3`,
+            [orderDate, flowerId, orderId]
+        );
+        const totalOrderedOnOtherOrders = parseInt(allOrdersOnDate.rows[0]?.total || 0);
+
+        // Проверка доступности: остаток на складе должен быть >= заказов в других заказах + новое количество в текущем
+        const available = availableQuantity - totalOrderedOnOtherOrders;
+        if (available < quantity) {
             return res.status(400).json({ 
-                error: `Недостаточно цветов. Доступно: ${availableForOrder}, требуется: ${requiredQuantity}` 
+                error: `Недостаточно цветов. На складе: ${availableQuantity}, зарезервировано в других заказах: ${totalOrderedOnOtherOrders}, доступно: ${available}, требуется: ${quantity}` 
             });
         }
 

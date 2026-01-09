@@ -220,15 +220,17 @@ async function saveOrder() {
         
         const method = orderId ? 'PUT' : 'POST';
         
+        const requestData = {
+            customerName,
+            orderDate
+        };
+        
         const response = await fetch(url, {
             method,
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                customerName,
-                orderDate
-            })
+            body: JSON.stringify(requestData)
         });
 
         if (!response.ok) {
@@ -286,20 +288,112 @@ async function openItemModal(orderId, item = null) {
     const title = document.getElementById('itemModalTitle');
     const flowerSelect = document.getElementById('flowerSelect');
     
-    // Заполнение списка цветов
-    flowerSelect.innerHTML = '<option value="">Выберите цветок</option>';
-    flowers.forEach(flower => {
-        const option = document.createElement('option');
-        option.value = flower.id;
-        option.textContent = `${flower.name} (доступно: ${flower.quantity})`;
-        
-        // Блокируем, если нет в наличии
-        if (flower.quantity <= 0) {
-            option.disabled = true;
+    // Обновляем данные о заказах перед открытием модального окна, чтобы иметь актуальную информацию
+    await loadOrders();
+    
+    // Находим заказ для получения даты
+    const order = orders.find(o => o.id === orderId);
+    if (!order) {
+        showNotification('Заказ не найден', 'error');
+        return;
+    }
+    
+    console.log('[openItemModal] Заказ:', order.id, 'Дата:', order.order_date, 'Позиций:', order.items?.length || 0);
+    
+    // Загружаем информацию о доступности цветов для этой даты
+    flowerSelect.innerHTML = '<option value="">Загрузка...</option>';
+    
+    try {
+        // Нормализуем дату заказа в формат YYYY-MM-DD
+        let orderDateStr = order.order_date;
+        if (orderDateStr instanceof Date) {
+            orderDateStr = orderDateStr.toISOString().split('T')[0];
+        } else if (typeof orderDateStr === 'string') {
+            // Если дата в формате с временем, берем только дату
+            orderDateStr = orderDateStr.split('T')[0];
         }
         
-        flowerSelect.appendChild(option);
-    });
+        // Всегда исключаем текущий заказ из подсчета при добавлении новой позиции
+        // При редактировании тоже исключаем, чтобы показать доступность без учета текущего заказа
+        const url = `${API_BASE}/flowers/availability?orderDate=${orderDateStr}&excludeOrderId=${orderId}`;
+        
+        console.log('[openItemModal] Запрос доступности:', url, 'orderDateStr:', orderDateStr, 'order.order_date исходное:', order.order_date);
+        const availabilityResponse = await fetch(url);
+        const availability = await availabilityResponse.json();
+        console.log('[openItemModal] Получена доступность:', availability);
+        
+        // Находим герберы в доступности для отладки
+        const gerbera = availability.find(f => f.name === 'Герберы' || f.name.toLowerCase().includes('гербер'));
+        if (gerbera) {
+            console.log('[openItemModal] Герберы - на складе:', gerbera.quantity, 'зарезервировано:', gerbera.reserved, 'доступно:', gerbera.available);
+        }
+        
+        // Получаем список цветов, которые уже есть в текущем заказе (для запрета дубликатов и подсчета резерва)
+        const existingFlowerIds = new Set();
+        const existingFlowerQuantities = new Map(); // flowerId -> quantity
+        if (order.items && order.items.length > 0) {
+            order.items.forEach(orderItem => {
+                // При редактировании исключаем текущую позицию
+                if (!item || orderItem.id !== item.id) {
+                    const flowerId = orderItem.flowerId || orderItem.flower_id;
+                    existingFlowerIds.add(flowerId);
+                    // Суммируем количество, если цветок уже есть в заказе
+                    const currentQty = existingFlowerQuantities.get(flowerId) || 0;
+                    existingFlowerQuantities.set(flowerId, currentQty + (orderItem.quantity || 0));
+                }
+            });
+        }
+        
+        // Заполнение списка цветов с информацией о доступности
+        flowerSelect.innerHTML = '<option value="">Выберите цветок</option>';
+        availability.forEach(flower => {
+            const option = document.createElement('option');
+            option.value = flower.id;
+            
+            const alreadyInOrder = existingFlowerIds.has(flower.id);
+            const alreadyOrderedQty = existingFlowerQuantities.get(flower.id) || 0;
+            
+            // Доступность уже рассчитана без учета текущего заказа (excludeOrderId)
+            // Но нужно вычесть позиции, которые уже есть в текущем заказе
+            let displayAvailable = flower.available;
+            
+            if (item && item.flower_id === flower.id) {
+                // Если редактируем этот же цветок, добавляем текущее количество к доступному
+                displayAvailable = flower.available + item.quantity;
+            } else if (alreadyInOrder) {
+                // Если цветок уже есть в заказе, вычитаем его количество из доступного
+                displayAvailable = flower.available - alreadyOrderedQty;
+            }
+            
+            option.textContent = `${flower.name} (на складе: ${flower.quantity}, доступно: ${displayAvailable})`;
+            
+            // Блокируем, если цветок уже есть в заказе (кроме редактирования текущей позиции)
+            if (alreadyInOrder && (!item || item.flower_id !== flower.id)) {
+                option.disabled = true;
+                option.textContent += ' (уже в заказе)';
+            }
+            
+            // Блокируем, если нет в наличии (только при создании)
+            if (displayAvailable <= 0 && !item && !alreadyInOrder) {
+                option.disabled = true;
+            }
+            
+            flowerSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Ошибка загрузки доступности:', error);
+        // Fallback на старый способ
+        flowerSelect.innerHTML = '<option value="">Выберите цветок</option>';
+        flowers.forEach(flower => {
+            const option = document.createElement('option');
+            option.value = flower.id;
+            option.textContent = `${flower.name} (доступно: ${flower.quantity})`;
+            if (flower.quantity <= 0) {
+                option.disabled = true;
+            }
+            flowerSelect.appendChild(option);
+        });
+    }
 
     if (item) {
         title.textContent = 'Редактировать позицию';
@@ -564,8 +658,10 @@ function showNotification(message, type = 'success') {
 }
 
 // Форматирование даты
-function formatDate(dateString) {
-    const date = new Date(dateString);
+function formatDate(dateString) {    
+    // Разбираем строку даты YYYY-MM-DD
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day); // month is 0-indexed
     return date.toLocaleDateString('ru-RU', {
         year: 'numeric',
         month: 'long',
@@ -579,4 +675,3 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
-
