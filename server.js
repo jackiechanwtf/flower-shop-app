@@ -23,7 +23,7 @@ const pool = new Pool({
 
 // Проверка подключения к БД
 pool.on('connect', () => {
-    console.log('Подключено к базе данных PostgreSQL');
+    //console.log('Подключено к базе данных PostgreSQL');
 });
 
 pool.on('error', (err) => {
@@ -79,8 +79,6 @@ async function setCurrentDate(date) {
             'UPDATE system_date SET date_value = $1, updated_at = CURRENT_TIMESTAMP WHERE id = 1',
             [date]
         );
-        
-        console.log(`[setCurrentDate] UPDATE выполнен, rowCount: ${result.rowCount}`);
         
         if (result.rowCount === 0) {
             throw new Error('Не удалось обновить системную дату');
@@ -175,22 +173,6 @@ app.get('/api/flowers/availability', async (req, res) => {
                 
                 const reservedResult = await pool.query(query, params);
                 reserved = parseInt(reservedResult.rows[0]?.total || 0);
-                
-                // Логирование для отладки
-                if (flower.name === 'Герберы' || flower.name.toLowerCase().includes('гербер')) {
-                    console.log(`[availability] ${flower.name}: на складе=${flower.quantity}, зарезервировано=${reserved}, доступно=${flower.quantity - reserved}, excludeOrderId=${excludeOrderId || 'нет'}, orderDate=${normalizedDate} (нормализовано из ${orderDate})`);
-                    
-                    // Дополнительная проверка: какие заказы есть на эту дату
-                    const debugQuery = `
-                        SELECT o.id, o.order_date, oi.flower_id, oi.quantity
-                        FROM orders o
-                        LEFT JOIN order_items oi ON o.id = oi.order_id
-                        WHERE o.order_date = $1::DATE
-                        ORDER BY o.id
-                    `;
-                    const debugResult = await pool.query(debugQuery, [normalizedDate]);
-                    console.log(`[availability] Заказы на дату ${normalizedDate}:`, debugResult.rows);
-                }
             }
             
             return {
@@ -340,7 +322,6 @@ app.post('/api/orders', async (req, res) => {
             [orderId, customerName, normalizedOrderDate]
         );
 
-        console.log(`[POST /api/orders] Заказ создан с датой: "${normalizedOrderDate}"`);
 
         res.status(201).json({ id: orderId, customerName, orderDate: normalizedOrderDate, items: [] });
     } catch (error) {
@@ -713,12 +694,10 @@ app.post('/api/system/date/next', async (req, res) => {
         }
 
         // Установить новую дату
-        console.log(`[nextDay] Устанавливаем дату: ${nextDateStr}`);
         await setCurrentDate(nextDateStr);
         
         // Получить обновленную дату для подтверждения
         const verifyDate = await getCurrentDate();
-        console.log(`[nextDay] Проверка после обновления: ${verifyDate}`);
         
         res.json({ 
             previousDate: currentDate,

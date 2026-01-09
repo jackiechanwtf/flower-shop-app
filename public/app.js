@@ -30,7 +30,6 @@ async function loadCurrentDate() {
         const response = await fetch(`${API_BASE}/system/date`);
         const data = await response.json();
         currentDate = data.currentDate;
-        console.log('Загружена текущая дата:', currentDate);
         document.getElementById('currentDate').textContent = formatDate(currentDate);
         return currentDate;
     } catch (error) {
@@ -298,8 +297,6 @@ async function openItemModal(orderId, item = null) {
         return;
     }
     
-    console.log('[openItemModal] Заказ:', order.id, 'Дата:', order.order_date, 'Позиций:', order.items?.length || 0);
-    
     // Загружаем информацию о доступности цветов для этой даты
     flowerSelect.innerHTML = '<option value="">Загрузка...</option>';
     
@@ -316,17 +313,8 @@ async function openItemModal(orderId, item = null) {
         // Всегда исключаем текущий заказ из подсчета при добавлении новой позиции
         // При редактировании тоже исключаем, чтобы показать доступность без учета текущего заказа
         const url = `${API_BASE}/flowers/availability?orderDate=${orderDateStr}&excludeOrderId=${orderId}`;
-        
-        console.log('[openItemModal] Запрос доступности:', url, 'orderDateStr:', orderDateStr, 'order.order_date исходное:', order.order_date);
         const availabilityResponse = await fetch(url);
         const availability = await availabilityResponse.json();
-        console.log('[openItemModal] Получена доступность:', availability);
-        
-        // Находим герберы в доступности для отладки
-        const gerbera = availability.find(f => f.name === 'Герберы' || f.name.toLowerCase().includes('гербер'));
-        if (gerbera) {
-            console.log('[openItemModal] Герберы - на складе:', gerbera.quantity, 'зарезервировано:', gerbera.reserved, 'доступно:', gerbera.available);
-        }
         
         // Получаем список цветов, которые уже есть в текущем заказе (для запрета дубликатов и подсчета резерва)
         const existingFlowerIds = new Set();
@@ -629,7 +617,6 @@ async function nextDay() {
         
         // Сначала обновляем дату, затем остальное
         await loadCurrentDate();
-        console.log('Дата после загрузки:', currentDate);
         
         // Небольшая задержка для гарантии обновления БД
         await new Promise(resolve => setTimeout(resolve, 100));
