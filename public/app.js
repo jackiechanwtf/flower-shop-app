@@ -292,6 +292,12 @@ async function openItemModal(orderId, item = null) {
         const option = document.createElement('option');
         option.value = flower.id;
         option.textContent = `${flower.name} (доступно: ${flower.quantity})`;
+        
+        // Блокируем, если нет в наличии
+        if (flower.quantity <= 0) {
+            option.disabled = true;
+        }
+        
         flowerSelect.appendChild(option);
     });
 
