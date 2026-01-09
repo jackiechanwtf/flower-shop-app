@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Управление заказами - Цветочный магазин</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Управление заказами</h1>
+            <div class="header-controls">
+                <div class="current-date">
+                    <span>Текущая дата: </span>
+                    <strong id="currentDate">Загрузка...</strong>
+                </div>
+                <button id="nextDayBtn" class="btn btn-primary">Следующий день</button>
+            </div>
+        </header>
+
+        <main>
+            <div class="orders-section">
+                <div class="section-header">
+                    <h2>Список заказов</h2>
+                    <button id="addOrderBtn" class="btn btn-success">+ Добавить заказ</button>
+                </div>
+
+                <div id="ordersList" class="orders-list">
+                    <!-- Заказы будут добавлены динамически -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Модальное окно для создания/редактирования заказа -->
+    <div id="orderModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">Новый заказ</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="orderForm">
+                    <input type="hidden" id="orderId">
+                    <div class="form-group">
+                        <label for="customerName">ФИО заказчика:</label>
+                        <input type="text" id="customerName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="orderDate">Дата заказа:</label>
+                        <input type="date" id="orderDate" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeOrderModal()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для добавления/редактирования позиции -->
+    <div id="itemModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="itemModalTitle">Новая позиция</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="itemForm">
+                    <input type="hidden" id="itemId">
+                    <input type="hidden" id="itemOrderId">
+                    <div class="form-group">
+                        <label for="flowerSelect">Вид цветка:</label>
+                        <select id="flowerSelect" required>
+                            <option value="">Выберите цветок</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="itemQuantity">Количество:</label>
+                        <input type="number" id="itemQuantity" min="1" required>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Сохранить</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeItemModal()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для перемещения позиции -->
+    <div id="moveItemModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Переместить позицию</h3>
+                <span class="close">&times;</span>
+            </div>
+            <div class="modal-body">
+                <form id="moveItemForm">
+                    <input type="hidden" id="moveItemId">
+                    <div class="form-group">
+                        <label for="targetOrderSelect">Выберите целевой заказ:</label>
+                        <select id="targetOrderSelect" required>
+                            <option value="">Выберите заказ</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Переместить</button>
+                        <button type="button" class="btn btn-secondary" onclick="closeMoveItemModal()">Отмена</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Уведомления -->
+    <div id="notification" class="notification"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
+
