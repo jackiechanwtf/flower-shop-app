@@ -494,6 +494,13 @@ app.put('/api/orders/:orderId/items/:itemId', async (req, res) => {
         const oldFlowerId = currentItem.rows[0].flower_id;
         const oldQuantity = currentItem.rows[0].quantity;
 
+        // Получить дату заказа
+        const orderCheck = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+        if (orderCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Заказ не найден' });
+        }
+        const orderDate = orderCheck.rows[0].order_date;
+
         // Проверка наличия цветов
         const flowerResult = await pool.query('SELECT * FROM flowers WHERE id = $1', [flowerId]);
         if (flowerResult.rows.length === 0) {
@@ -501,7 +508,6 @@ app.put('/api/orders/:orderId/items/:itemId', async (req, res) => {
         }
 
         const availableQuantity = flowerResult.rows[0].quantity;
-        const orderDate = orderCheck.rows[0].order_date;
 
         // Подсчет уже заказанных цветов этого вида в этом заказе (исключая текущую позицию)
         const existingItems = await pool.query(
