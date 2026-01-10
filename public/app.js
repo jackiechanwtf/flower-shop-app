@@ -111,6 +111,19 @@ function setupEventListeners() {
     });
 }
 
+// Расчет суммарной стоимости заказа
+function calculateOrderTotal(items) {
+    if (!items || items.length === 0) {
+        return 0;
+    }
+    
+    return items.reduce((total, item) => {
+        const price = parseFloat(item.price) || 0;
+        const quantity = parseInt(item.quantity) || 0;
+        return total + (price * quantity);
+    }, 0);
+}
+
 // Отображение заказов
 function renderOrders() {
     const ordersList = document.getElementById('ordersList');
@@ -120,32 +133,41 @@ function renderOrders() {
         return;
     }
 
-    ordersList.innerHTML = orders.map(order => `
-        <div class="order-card" data-order-id="${order.id}">
-            <div class="order-header">
-                <div class="order-info">
-                    <h3>${escapeHtml(order.customer_name)}</h3>
-                    <div class="order-details">
-                        <div>Дата заказа: <strong>${formatDate(order.order_date)}</strong></div>
-                        <div class="order-id">ID: ${order.id}</div>
+    ordersList.innerHTML = orders.map(order => {
+        const totalCost = calculateOrderTotal(order.items || []);
+        
+        return `
+        <div class="order-wrapper">
+            <div class="order-card" data-order-id="${order.id}">
+                <div class="order-header">
+                    <div class="order-info">
+                        <h3>${escapeHtml(order.customer_name)}</h3>
+                        <div class="order-details">
+                            <div>Дата заказа: <strong>${formatDate(order.order_date)}</strong></div>
+                            <div class="order-id">ID: ${order.id}</div>
+                        </div>
+                    </div>
+                    <div class="order-actions">
+                        <button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')">Редактировать</button>
+                        <button class="btn btn-danger btn-sm" onclick="deleteOrder('${order.id}')">Удалить</button>
                     </div>
                 </div>
-                <div class="order-actions">
-                    <button class="btn btn-warning btn-sm" onclick="editOrder('${order.id}')">Редактировать</button>
-                    <button class="btn btn-danger btn-sm" onclick="deleteOrder('${order.id}')">Удалить</button>
+                <div class="items-section">
+                    <div class="items-header">
+                        <h4>Позиции заказа</h4>
+                        <button class="btn btn-success btn-sm" onclick="openItemModal('${order.id}')">+ Добавить позицию</button>
+                    </div>
+                    <div class="items-list" id="items-${order.id}">
+                        ${renderItems(order.items || [], order.id)}
+                    </div>
                 </div>
             </div>
-            <div class="items-section">
-                <div class="items-header">
-                    <h4>Позиции заказа</h4>
-                    <button class="btn btn-success btn-sm" onclick="openItemModal('${order.id}')">+ Добавить позицию</button>
-                </div>
-                <div class="items-list" id="items-${order.id}">
-                    ${renderItems(order.items || [], order.id)}
-                </div>
+            <div class="order-total-under">
+                <strong>Итого: ${totalCost.toFixed(2)} ₽</strong>
             </div>
         </div>
-    `).join('');
+    `;
+    }).join('');
 }
 
 // Отображение позиций заказа
@@ -156,11 +178,19 @@ function renderItems(items, orderId = '') {
 
     return items.map(item => {
         const itemOrderId = item.order_id || orderId;
+        const price = parseFloat(item.price) || 0;
+        const quantity = parseInt(item.quantity) || 0;
+        const subtotal = price * quantity;
+        
         return `
         <div class="item-card" data-item-id="${item.id}">
             <div class="item-info">
                 <div class="item-name">${escapeHtml(item.flowerName || item.flower_name || 'Неизвестный цветок')}</div>
-                <div class="item-details">Количество: <strong>${item.quantity}</strong></div>
+                <div class="item-details">
+                    <div>Количество: <strong>${item.quantity}</strong> шт.</div>
+                    <div>Цена за шт.: <strong>${price.toFixed(2)} ₽</strong></div>
+                    <div>Сумма: <strong>${subtotal.toFixed(2)} ₽</strong></div>
+                </div>
                 <div class="item-id">ID: ${item.id}</div>
             </div>
             <div class="item-actions">

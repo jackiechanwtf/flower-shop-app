@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS flowers (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL UNIQUE,
     quantity INTEGER NOT NULL DEFAULT 0 CHECK (quantity >= 0),
+    price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -37,15 +38,15 @@ CREATE TABLE system_date (
 
 
 -- Вставка начальных данных - номенклатура цветов
-INSERT INTO flowers (name, quantity) VALUES
-    ('Розы', 50),
-    ('Тюльпаны', 30),
-    ('Хризантемы', 40),
-    ('Герберы', 25),
-    ('Лилии', 20),
-    ('Пионы', 15),
-    ('Орхидеи', 10),
-    ('Гвоздики', 35)
+INSERT INTO flowers (name, quantity, price) VALUES
+    ('Розы', 50, 150.00),
+    ('Тюльпаны', 30, 120.00),
+    ('Хризантемы', 40, 80.00),
+    ('Герберы', 25, 90.00),
+    ('Лилии', 20, 110.00),
+    ('Пионы', 15, 130.00),
+    ('Орхидеи', 10, 200.00),
+    ('Гвоздики', 35, 70.00)
 ON CONFLICT (name) DO NOTHING;
 
 -- Инициализация системной даты

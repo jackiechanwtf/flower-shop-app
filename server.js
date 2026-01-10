@@ -205,6 +205,7 @@ app.get('/api/orders', async (req, res) => {
                      'flowerId', oi.flower_id,
                      'flowerName', f.name,
                      'quantity', oi.quantity,
+                     'price', f.price,
                      'order_id', oi.order_id
                  )
              ) FILTER (WHERE oi.id IS NOT NULL), '[]'::json) as items
@@ -258,7 +259,7 @@ app.get('/api/orders/:id', async (req, res) => {
         }
 
         const itemsResult = await pool.query(
-            `SELECT oi.*, f.name as flower_name
+            `SELECT oi.*, f.name as flower_name, f.price
              FROM order_items oi
              JOIN flowers f ON oi.flower_id = f.id
              WHERE oi.order_id = $1`,
