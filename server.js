@@ -30,7 +30,7 @@ pool.on('error', (err) => {
     console.error('Ошибка подключения к БД:', err);
 });
 
-// Вспомогательная функция: сегодняшняя реальная дата в формате YYYY-MM-DD
+// Сегодняшняя дата в формате YYYY-MM-DD
 function getTodayString() {
     const today = new Date();
     const year = today.getFullYear();
@@ -39,7 +39,7 @@ function getTodayString() {
     return `${year}-${month}-${day}`;
 }
 
-// Получить текущую системную дату (возвращает строку YYYY-MM-DD)
+// Получить текущую системную дату 
 async function getCurrentDate() {
     const result = await pool.query('SELECT TO_CHAR(date_value, \'YYYY-MM-DD\') as date_str FROM system_date WHERE id = 1');
     if (result.rows[0]?.date_str) {
@@ -49,7 +49,7 @@ async function getCurrentDate() {
     return getTodayString();
 }
 
-// Установить системную дату (принимает строку в формате YYYY-MM-DD)
+// Установить системную дату
 async function setCurrentDate(date) {
     if (typeof date !== 'string') {
         throw new Error('Дата должна быть строкой в формате YYYY-MM-DD');
@@ -84,7 +84,7 @@ async function setCurrentDate(date) {
             throw new Error('Не удалось обновить системную дату');
         }
         
-        // Проверяем, что дата действительно обновилась (используем TO_CHAR для получения строки)
+        // Проверяем, что дата действительно обновилась
         const verify = await pool.query('SELECT TO_CHAR(date_value, \'YYYY-MM-DD\') as date_str FROM system_date WHERE id = 1');
         const newDateStr = verify.rows[0]?.date_str;
         console.log(`[setCurrentDate] Проверка: дата в БД после UPDATE: ${newDateStr}`);
@@ -149,7 +149,7 @@ app.get('/api/flowers/availability', async (req, res) => {
             let reserved = 0;
             
             if (orderDate) {
-                // Нормализуем дату: берем только часть до пробела или T (YYYY-MM-DD)
+                // Нормализуем дату
                 let normalizedDate = orderDate;
                 if (typeof orderDate === 'string') {
                     normalizedDate = orderDate.split('T')[0].split(' ')[0];
@@ -157,7 +157,7 @@ app.get('/api/flowers/availability', async (req, res) => {
                     normalizedDate = orderDate.toISOString().split('T')[0];
                 }
                 
-                // Считаем заказы на эту дату, исключая указанный заказ (если передан)
+                // Считаем заказы на эту дату, исключая указанный заказ
                 let query = `
                     SELECT SUM(oi.quantity) as total
                     FROM order_items oi
@@ -223,9 +223,8 @@ app.get('/api/orders', async (req, res) => {
         const orders = result.rows.map(order => {
             let orderDate = order.order_date;
             
-            // Нормализуем дату: если это объект Date или строка с временем, берем только дату
+            // Нормализуем дату
             if (orderDate instanceof Date) {
-                // Используем локальные компоненты даты вместо toISOString() чтобы избежать проблем с timezone
                 const year = orderDate.getFullYear();
                 const month = String(orderDate.getMonth() + 1).padStart(2, '0');
                 const day = String(orderDate.getDate()).padStart(2, '0');
@@ -269,7 +268,6 @@ app.get('/api/orders/:id', async (req, res) => {
         // Нормализуем дату заказа
         let orderDate = orderResult.rows[0].order_date;
         if (orderDate instanceof Date) {
-            // Используем локальные компоненты даты вместо toISOString() чтобы избежать проблем с timezone
             const year = orderDate.getFullYear();
             const month = String(orderDate.getMonth() + 1).padStart(2, '0');
             const day = String(orderDate.getDate()).padStart(2, '0');
@@ -299,7 +297,6 @@ app.post('/api/orders', async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать ФИО заказчика и дату заказа' });
         }
 
-        // Нормализуем дату: берем только часть YYYY-MM-DD
         let normalizedOrderDate = orderDate;
         if (typeof orderDate === 'string') {
             normalizedOrderDate = orderDate.split('T')[0].split(' ')[0];
@@ -342,7 +339,7 @@ app.put('/api/orders/:id', async (req, res) => {
             return res.status(400).json({ error: 'Необходимо указать ФИО заказчика и дату заказа' });
         }
 
-        // Нормализуем дату: берем только часть YYYY-MM-DD
+        // Нормализуем дату
         let normalizedOrderDate = orderDate;
         if (typeof orderDate === 'string') {
             normalizedOrderDate = orderDate.split('T')[0].split(' ')[0];
@@ -516,7 +513,7 @@ app.put('/api/orders/:orderId/items/:itemId', async (req, res) => {
         );
         const alreadyOrderedInThisOrder = parseInt(existingItems.rows[0]?.total || 0);
 
-        // Подсчет всех заказов этого цветка на дату заказа (ИСКЛЮЧАЯ текущий заказ)
+        // Подсчет всех заказов этого цветка на дату заказа (исключая текущий заказ)
         // Это позволяет редактировать количество в текущем заказе без учета его резерва
         const allOrdersOnDate = await pool.query(
             `SELECT SUM(oi.quantity) as total
